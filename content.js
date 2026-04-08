@@ -67,12 +67,15 @@
     const isTeamsDomain = url.includes('teams.microsoft.com') || 
                           url.includes('sharepoint.com') ||
                           url.includes('office.com') ||
+                          url.includes('microsoftstream.com') ||
                           url.includes('stream.microsoft.com');
     
     // Check for transcript panel in DOM
     const hasTranscriptPanel = !!document.querySelector('#OneTranscript') ||
                                !!document.querySelector('.ms-List') ||
-                               !!document.querySelector('[aria-label*="transcript" i]');
+                               !!document.querySelector('[aria-label*="transcript" i]') ||
+                               !!document.querySelector('.itemDisplayName-501') ||
+                               !!document.querySelector('.entryText-489');
     
     if (hasTranscriptPanel) return true;
     
