@@ -46,10 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
       statusIndicator.textContent = 'Detecting transcript...';
       statusIndicator.className = 'status-indicator not-ready';
 
-      // First, try to inject content script into all frames (handles iframe cases)
-      await injectContentScript(tab.id);
+      // Method 1: Try direct script injection to detect transcript
+      const detected = await detectTranscriptDirectly(tab.id);
+      if (detected) {
+        showTranscriptView(detected);
+        return;
+      }
 
-      // Check all frames — transcript is often inside an iframe
+      // Method 2: Try content script messaging
+      await injectContentScript(tab.id);
+      
       let frames = [];
       try {
         frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
@@ -57,26 +63,59 @@ document.addEventListener('DOMContentLoaded', () => {
         frames = [{ frameId: 0 }];
       }
 
-      let found = false;
       for (const frame of frames) {
         try {
           const response = await sendMessage(tab.id, { action: 'CHECK_TRANSCRIPT_PAGE' }, 3000, frame.frameId);
           if (response?.success && response.isTranscript) {
             currentFrameId = frame.frameId;
             showTranscriptView(response.info);
-            found = true;
-            break;
+            return;
           }
         } catch (e) {
           // This frame didn't respond, try next
         }
       }
 
-      if (!found) showNotTranscriptView();
+      showNotTranscriptView();
     } catch (error) {
       console.error('Check error:', error);
       showNotReady('Refresh page & try again');
     }
+  }
+
+  // Direct detection via script injection
+  async function detectTranscriptDirectly(tabId) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true },
+        func: () => {
+          // Check for Microsoft Stream transcript elements
+          const entries = document.querySelectorAll('.ms-List-cell');
+          const hasTranscript = entries.length > 0 && 
+            document.querySelector('.itemDisplayName-501') !== null &&
+            document.querySelector('.entryText-489') !== null;
+          
+          if (hasTranscript) {
+            return {
+              found: true,
+              entryCount: entries.length,
+              title: document.title || 'Microsoft Stream Meeting',
+              duration: 'Unknown'
+            };
+          }
+          return { found: false };
+        }
+      });
+
+      for (const result of results) {
+        if (result?.result?.found) {
+          return result.result;
+        }
+      }
+    } catch (e) {
+      console.log('Direct detection failed:', e);
+    }
+    return null;
   }
 
   // Inject content script into page and all frames
@@ -86,9 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
         target: { tabId: tabId, allFrames: true },
         files: ['content.js']
       });
-      await sleep(300); // Give it time to initialize
+      await sleep(300);
     } catch (e) {
-      // Script might already be injected, that's fine
+      // Script might already be injected
     }
   }
 
