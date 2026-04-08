@@ -27,36 +27,21 @@
       '.ms-List-cell',
       '[data-automationid="ListCell"]',
       '[data-testid="validate-measured-transcript-item-height"]',
-      '[id^="listItem-"]',
-      '[data-tid="transcript-entry"]',
-      '[data-tid="transcript-item"]',
-      '[data-testid="transcript-entry"]',
-      '.transcript-entry',
-      '.transcript-item',
-      '[class*="transcript-entry" i]',
-      '[class*="caption-item" i]',
-      '[data-speaker]'
+      '[id^="listItem-"]'
     ],
     speaker: [
       '.itemDisplayName-501',
+      '.eventSpeakerName-495',
       '[class*="itemDisplayName" i]',
       '[id^="speakerProfile-"]',
       '[data-tid="speaker-name"]',
-      '[data-speaker]',
-      '[class*="speaker-name" i]',
-      '[class*="speaker" i]',
-      'strong',
-      'b'
+      '[data-speaker]'
     ],
     timestamp: [
       '[id^="Header-timestamp-"]',
       '.baseTimestamp-497',
       '[class*="baseTimestamp" i]',
-      '[data-tid="timestamp"]',
-      '[data-start-time]',
-      '[data-timestamp]',
-      '[class*="timestamp" i]',
-      'time[datetime]'
+      '[data-tid="timestamp"]'
     ]
   };
 
@@ -216,12 +201,24 @@
   }
 
   function extractText(entry) {
-    // Try specific text selectors first
+    // Try speech entry format first
+    const textEl = entry.querySelector('.entryText-489');
+    if (textEl?.textContent?.trim()) {
+      return textEl.textContent.trim();
+    }
+    
+    // Try event entry format
+    const eventTextEl = entry.querySelector('.eventText-496');
+    if (eventTextEl?.textContent?.trim()) {
+      return eventTextEl.textContent.trim();
+    }
+    
+    // Fallback: any element with text content
     const textSelectors = [
-      '.entryText-489',
       '[class*="entryText" i]',
       '[id^="sub-entry-"]',
-      '[class*="meetingEvent" i] > div:last-child'
+      '[class*="eventText" i]',
+      '[class*="textHoverColor" i]'
     ];
     
     for (const selector of textSelectors) {
@@ -231,21 +228,7 @@
       }
     }
     
-    // Fallback: clone and clean
-    const clone = entry.cloneNode(true);
-    
-    // Remove metadata elements
-    [...SELECTORS.speaker, ...SELECTORS.timestamp].forEach(selector => {
-      clone.querySelectorAll(selector).forEach(el => {
-        if (el.textContent?.length < 100) el.remove();
-      });
-    });
-
-    let text = clone.textContent || '';
-    text = text.replace(/^\s*:\s*/, '');
-    text = text.replace(/\s+/g, ' ').trim();
-    
-    return text;
+    return '';
   }
 
   // ===== LOADING WITH OBSERVER =====
