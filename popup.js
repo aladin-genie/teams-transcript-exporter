@@ -209,6 +209,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Direct extraction via script injection
+  async function extractTranscriptDirectly(tabId, options) {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId, allFrames: true },
+      func: (opts) => {
+        const entries = document.querySelectorAll('.ms-List-cell');
+        const transcript = [];
+        const speakers = new Set();
+        
+        entries.forEach(e => {
+          const speaker = e.querySelector('.itemDisplayName-501')?.textContent?.trim();
+          const time = e.querySelector('[id^="Header-timestamp-"]')?.textContent?.trim();
+          const text = e.querySelector('.entryText-489')?.textContent?.trim();
+          
+          if (text) {
+            const entry = { text };
+            if (speaker && opts.includeSpeakerNames !== false) {
+              entry.speaker = speaker;
+              speakers.add(speaker);
+            }
+            if (time && opts.includeTimestamps !== false) {
+              entry.timestamp = time;
+            }
+            transcript.push(entry);
+          }
+        });
+
+        return {
+          metadata: {
+            title: document.title || 'Microsoft Stream Meeting',
+            duration: 'Unknown',
+            url: window.location.href,
+            extractedAt: new Date().toISOString()
+          },
+          stats: {
+            totalEntries: transcript.length,
+            mergedEntries: transcript.length,
+            uniqueSpeakers: speakers.size,
+            speakers: Array.from(speakers)
+          },
+          entries: transcript
+        };
+      },
+      args: [options]
+    });
+
+    for (const result of results) {
+      if (result?.result?.entries?.length > 0) {
+        return result.result;
+      }
+    }
+    return null;
+  }
+
   // ===== EXPORT HANDLER =====
   exportBtn.addEventListener('click', async () => {
     if (isExporting || !currentTab?.id) return;
@@ -222,16 +276,31 @@ document.addEventListener('DOMContentLoaded', () => {
         cleanText: cleanText.checked
       };
 
-      const response = await sendMessage(currentTab.id, {
-        action: 'EXTRACT_TRANSCRIPT',
-        options
-      }, 60000, currentFrameId);
+      let data;
+      
+      // Try content script first
+      try {
+        const response = await sendMessage(currentTab.id, {
+          action: 'EXTRACT_TRANSCRIPT',
+          options
+        }, 10000, currentFrameId);
 
-      if (!response?.success) {
-        throw new Error(response?.error || 'Export failed');
+        if (response?.success) {
+          data = response.data;
+        }
+      } catch (e) {
+        console.log('Content script extraction failed, trying direct...');
       }
 
-      const data = response.data;
+      // Fall back to direct extraction
+      if (!data) {
+        data = await extractTranscriptDirectly(currentTab.id, options);
+      }
+
+      if (!data) {
+        throw new Error('Could not extract transcript. Try refreshing the page.');
+      }
+
       showProgress('Preparing download...');
 
       const safeTitle = data.metadata.title.replace(/[^a-zA-Z0-9\-_]/g, '-').replace(/-+/g, '-');
