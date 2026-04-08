@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportFormat = document.getElementById('exportFormat');
 
   let currentTab = null;
+  let currentFrameId = 0;
   let isExporting = false;
 
   // ===== PAGE CHECK =====
@@ -31,26 +32,68 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const isValidUrl = tab.url?.includes('teams.microsoft.com') || 
+      const isValidUrl = tab.url?.includes('teams.microsoft.com') ||
                          tab.url?.includes('sharepoint.com') ||
-                         tab.url?.includes('office.com');
+                         tab.url?.includes('office.com') ||
+                         tab.url?.includes('microsoftstream.com') ||
+                         tab.url?.includes('stream.microsoft.com');
       
       if (!isValidUrl) {
         showNotReady('Not a Teams/SharePoint page');
         return;
       }
 
-      const response = await sendMessage(tab.id, { action: 'CHECK_TRANSCRIPT_PAGE' }, 5000);
+      statusIndicator.textContent = 'Detecting transcript...';
+      statusIndicator.className = 'status-indicator not-ready';
 
-      if (response?.success && response.isTranscript) {
-        showTranscriptView(response.info);
-      } else {
-        showNotTranscriptView();
+      // First, try to inject content script into all frames (handles iframe cases)
+      await injectContentScript(tab.id);
+
+      // Check all frames — transcript is often inside an iframe
+      let frames = [];
+      try {
+        frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
+      } catch (e) {
+        frames = [{ frameId: 0 }];
       }
+
+      let found = false;
+      for (const frame of frames) {
+        try {
+          const response = await sendMessage(tab.id, { action: 'CHECK_TRANSCRIPT_PAGE' }, 3000, frame.frameId);
+          if (response?.success && response.isTranscript) {
+            currentFrameId = frame.frameId;
+            showTranscriptView(response.info);
+            found = true;
+            break;
+          }
+        } catch (e) {
+          // This frame didn't respond, try next
+        }
+      }
+
+      if (!found) showNotTranscriptView();
     } catch (error) {
       console.error('Check error:', error);
       showNotReady('Refresh page & try again');
     }
+  }
+
+  // Inject content script into page and all frames
+  async function injectContentScript(tabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true },
+        files: ['content.js']
+      });
+      await sleep(300); // Give it time to initialize
+    } catch (e) {
+      // Script might already be injected, that's fine
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   function showNotReady(message) {
@@ -98,13 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ===== UTILITIES =====
-  function sendMessage(tabId, message, timeout = 30000) {
+  function sendMessage(tabId, message, timeout = 30000, frameId = undefined) {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         reject(new Error('Request timed out'));
       }, timeout);
 
-      chrome.tabs.sendMessage(tabId, message, (response) => {
+      const opts = frameId !== undefined ? { frameId } : {};
+      chrome.tabs.sendMessage(tabId, message, opts, (response) => {
         clearTimeout(timeoutId);
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
@@ -142,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await sendMessage(currentTab.id, {
         action: 'EXTRACT_TRANSCRIPT',
         options
-      }, 60000);
+      }, 60000, currentFrameId);
 
       if (!response?.success) {
         throw new Error(response?.error || 'Export failed');

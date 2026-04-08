@@ -27,7 +27,9 @@
       '.ms-List-cell',
       '[data-automationid="ListCell"]',
       '[data-testid="validate-measured-transcript-item-height"]',
-      '[id^="listItem-"]'
+      '[id^="listItem-"]',
+      '[id^="sub-entry-"]',
+      '[role="listitem"][class*="entryText"]'
     ],
     speaker: [
       '.itemDisplayName-501',
@@ -74,8 +76,9 @@
     const hasTranscriptPanel = !!document.querySelector('#OneTranscript') ||
                                !!document.querySelector('.ms-List') ||
                                !!document.querySelector('[aria-label*="transcript" i]') ||
-                               !!document.querySelector('.itemDisplayName-501') ||
-                               !!document.querySelector('.entryText-489');
+                               !!document.querySelector('[class*="itemDisplayName"]') ||
+                               !!document.querySelector('[class*="entryText"]') ||
+                               !!document.querySelector('[id^="sub-entry-"]');
     
     if (hasTranscriptPanel) return true;
     
@@ -204,33 +207,36 @@
   }
 
   function extractText(entry) {
-    // Try speech entry format first
-    const textEl = entry.querySelector('.entryText-489');
+    // If the entry itself is the text element (id^="sub-entry-")
+    if (entry.id?.startsWith('sub-entry-')) {
+      return entry.textContent.trim();
+    }
+
+    // Try speech entry format first (class suffix changes with Teams updates)
+    const textEl = entry.querySelector('[class*="entryText"]');
     if (textEl?.textContent?.trim()) {
       return textEl.textContent.trim();
     }
-    
+
     // Try event entry format
-    const eventTextEl = entry.querySelector('.eventText-496');
+    const eventTextEl = entry.querySelector('[class*="eventText"]');
     if (eventTextEl?.textContent?.trim()) {
       return eventTextEl.textContent.trim();
     }
-    
-    // Fallback: any element with text content
+
+    // Fallback: sub-entry children or textHoverColor
     const textSelectors = [
-      '[class*="entryText" i]',
       '[id^="sub-entry-"]',
-      '[class*="eventText" i]',
       '[class*="textHoverColor" i]'
     ];
-    
+
     for (const selector of textSelectors) {
       const el = entry.querySelector(selector);
       if (el?.textContent?.trim()) {
         return el.textContent.trim();
       }
     }
-    
+
     return '';
   }
 
